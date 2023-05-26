@@ -1,0 +1,78 @@
+perlmutter interactive node
+salloc -N 1 -C cpu -q interactive -t 04:00:00 -L SCRATCH
+
+cori interactive node
+salloc -N 1 -C haswell -t 04:00:00 --qos interactive -L SCRATCH,project
+
+desi env:
+source /global/common/software/desi/desi_environment.sh main
+
+cosmodesi:
+source /global/common/software/desi/users/adematti/cosmodesi_environment.sh main 
+
+to run 
+salloc -N 1 -C cpu -q debug -t 00:10:00 python make_mocks.py
+
+# generate lognormal cubic mocks using MPI and job arrays
+1. Must modify job scripts for each case, change stuff like bias, nmesh, boxsize, etc
+2. sbatch job_array_generate_mocks.sh       # changing the second index in `--array=1-N` will give N lognormal cubic mocks
+3. sbatch job_array_generate_randoms.sh     # changing the second index in `--array=1-N` will give N randoms
+4. sbatch job_array_pypower_mocks_cubic.sh  # changing the second index in `--array=1-N` will calculate Pk for mocks 1-N
+
+# generate cutsky mocks
+1. sbatch job_array_generate_cutsky.sh
+2. sbatch job_array_generate_cutsky_randoms.sh
+3. sbatch job_array_pypower_mocks_cutsky.sh
+
+# generate validation plots
+1. skyplots.ipynb
+2. pkplots.ipynb
+
+
+
+
+# generate lognormal mocks using MPI (Fastest way until now)
+1. interactive node
+    a. salloc -N 10 -C haswell -t 01:00:00 --qos interactive -L SCRATCH,project # cori
+    b. salloc -N 2 -C cpu -q interactive -t 01:00:00 -L SCRATCH
+2. bash run_generate_mocks.sh    # this runs over loop of and generates a N of lognormal cubic mocks
+3. bash run_generate_randoms.sh  # this runs over loop and generates N randoms (for cubic lognormal mocks)
+4. calculate pk with N number of randoms
+
+
+
+
+# generate lognormal mocks  
+1. source /global/common/software/desi/users/adematti/cosmodesi_environment.sh main
+2. Generate lognormal mock NO CUTSKY yet
+    a. salloc -N 1 -n 2 -C cpu -q regular -t 01:00:00 python generate_mocks.py --bias 3.0 --nbar 2500 --zmin 2.75 --zmax 3.25 --nmesh 1024 --boxsize 8000 --id 1
+3. Create Cutsky mock from a full mock
+    a. salloc -N 1 -n 2 -C cpu -q regular -t 01:00:00 python cutsky_mock.py --bias 3.0 --nbar 2500 --zmin 2.75 --zmax 3.25 --nmesh 1024 --boxsize 8000
+    
+    
+# generate lognormal mocks
+1. sbatch job_generate_mocks.sh
+2. sbatch job_cutsky_pattern_mock.sh
+3. concatenate cutsky pattern mocks and save to fits
+    a. use glob to get list of filenames
+        def stack_fits(fns):
+            new_table = Table()
+            for i, fn in enumerate(fns):
+                print(f'stacking fits {i+1}/{len(fns)}',end='\r')
+                d = Table.read(fn)
+                new_table = vstack([new_table,d])
+            return new_table
+3. Compute Pk
+    a. Open interactive node
+    b. source /global/common/software/desi/users/adematti/cosmodesi_environment.sh main
+    
+    c. Computer Pk on cubic box
+        - srun -n 64 python pypower_mocks_cubic.py --nmesh 1024 --boxsize 8000 --randoms_fn '/pscratch/sd/a/arosado/lognormal_mocks/randoms_3.0_1250.0_1024_8000.0_3.0_1_cubic.fits' --data_fn '/pscratch/sd/a/arosado/lognormal_mocks/data_3.0_1250.0_1024_8000.0_3.0_1_cubic.fits' --out_dir '/pscratch/sd/a/arosado/lognormal_mocks/' --file_id 'cubic'
+        
+    d. Compute Pk on contiguous cutsky
+        - srun -n 64 python pypower_mocks.py --nmesh 1024 --boxsize 8000 --randoms_fn '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/randoms_cutsky_3.0_1250.0_1024_8000.0_3.0.fits' --data_fn '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/data_cutsky_3.0_1250.0_1024_8000.0_3.0.fits' --out_dir '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/' --file_id 'contiguous'
+        
+    e. Compute Pk on checkered cutsky
+        - srun -n 64 python pypower_mocks.py --nmesh 1024 --boxsize 8000 --randoms_fn '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/randoms_cutsky_3.0_1250.0_1024_8000.0_3.0_concat.fits' --data_fn '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/data_cutsky_3.0_1250.0_1024_8000.0_3.0_concat.fits' --out_dir '/pscratch/sd/a/arosado/lognormal_mocks/cutsky/test1/' --file_id 'concat'
+
+Pkplot notebook
